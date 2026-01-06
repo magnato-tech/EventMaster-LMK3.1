@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
-import { AppState, EventTemplate, ServiceRole, GroupCategory, UUID, ProgramItem, Assignment } from '../types';
-import { Settings, Plus, Info, Edit3, Trash2, Shield, Repeat, X, Clock, Users, Edit2, Library, ListChecks } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { AppState, EventTemplate, ServiceRole, GroupCategory, UUID, ProgramItem, Assignment, Person, GroupRole, ChangeLog, CoreRole } from '../types';
+import { Settings, Plus, Info, Edit3, Trash2, Shield, Repeat, X, Clock, Users, Edit2, Library, ListChecks, Lock, UserCheck, UserPlus, GripVertical, RefreshCw, AlertCircle, Save } from 'lucide-react';
 
 interface Props {
   db: AppState;
@@ -34,6 +34,162 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
   const [progDuration, setProgDuration] = useState(5);
   const [progRoleId, setProgRoleId] = useState<string>('');
   const [progGroupId, setProgGroupId] = useState<string>('');
+  const [progPersonId, setProgPersonId] = useState<string>('');
+
+  // Drag and Drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // HJELPEFUNKSJON: Henter alle programposter for valgt mal sortert
+  const currentTemplateProgramItems = useMemo(() => {
+    if (!selectedTemplate) return [];
+    return db.programItems
+      .filter(p => p.template_id === selectedTemplate.id)
+      .sort((a, b) => a.order - b.order);
+  }, [selectedTemplate, db.programItems]);
+
+  // LOGIKK FOR SYNKRONISERINGSSTATUS
+  const isUnsynced = useMemo(() => {
+    if (!selectedTemplate) return false;
+    
+    // 1. Finn unike [Rolle + Person] kombinasjoner i kjøreplanen
+    const programCombos = new Set<string>();
+    currentTemplateProgramItems.forEach(item => {
+      if (item.service_role_id) {
+        programCombos.add(`${item.service_role_id}-${item.person_id || 'null'}`);
+      }
+    });
+
+    // 2. Finn roller i bemanningslisten som stammer fra kjøreplanen
+    const programRoleIds = new Set(currentTemplateProgramItems.filter(p => p.service_role_id).map(p => p.service_role_id));
+    const staffingCombos = new Set<string>();
+    
+    db.assignments
+      .filter(a => a.template_id === selectedTemplate.id && programRoleIds.has(a.service_role_id))
+      .forEach(a => {
+        staffingCombos.add(`${a.service_role_id}-${a.person_id || 'null'}`);
+      });
+
+    // 3. Sammenlign settene
+    if (programCombos.size !== staffingCombos.size) return true;
+    for (let combo of programCombos) {
+      if (!staffingCombos.has(combo)) return true;
+    }
+    
+    return false;
+  }, [currentTemplateProgramItems, db.assignments, selectedTemplate]);
+
+  // FUNKSJON: Synkroniser bemanningsliste med kjøreplan
+  const handleSyncStaffing = () => {
+    if (!selectedTemplate) return;
+
+    // Finn unike kombinasjoner i kjøreplanen
+    const uniqueCombos = new Map<string, { roleId: string, personId: string | null }>();
+    currentTemplateProgramItems.forEach(item => {
+      if (item.service_role_id) {
+        const key = `${item.service_role_id}-${item.person_id || 'null'}`;
+        if (!uniqueCombos.has(key)) {
+          uniqueCombos.set(key, { 
+            roleId: item.service_role_id, 
+            personId: item.person_id || null 
+          });
+        }
+      }
+    });
+
+    const programRoleIds = new Set(currentTemplateProgramItems.filter(p => p.service_role_id).map(p => p.service_role_id));
+
+    setDb(prev => {
+      // Behold assignments fra andre maler
+      const otherAssignments = prev.assignments.filter(a => a.template_id !== selectedTemplate.id);
+      
+      // Behold manuelle vakter i denne malen (roller som IKKE finnes i kjøreplanen)
+      const manualAssignments = prev.assignments.filter(a => 
+        a.template_id === selectedTemplate.id && !programRoleIds.has(a.service_role_id)
+      );
+
+      // Opprett nye assignments basert på kjøreplanen
+      const newAssignments: Assignment[] = Array.from(uniqueCombos.values()).map(combo => ({
+        id: crypto.randomUUID(),
+        template_id: selectedTemplate.id,
+        occurrence_id: null,
+        service_role_id: combo.roleId,
+        person_id: combo.personId,
+        display_order: 1 // Default i Master
+      }));
+
+      // Opprett loggføring
+      const log: ChangeLog = {
+        id: crypto.randomUUID(),
+        occurrence_id: '',
+        actor_id: 'system',
+        timestamp: new Date().toISOString(),
+        description: `Bemanning for mal "${selectedTemplate.title}" ble synkronisert med kjøreplan.`
+      };
+
+      return {
+        ...prev,
+        assignments: [...otherAssignments, ...manualAssignments, ...newAssignments],
+        changeLogs: [...prev.changeLogs, log]
+      };
+    });
+  };
+
+  const staffingData = useMemo(() => {
+    if (!selectedTemplate) return { programLinked: [], manual: [] };
+
+    const programRoleIds = new Set(currentTemplateProgramItems.filter(p => p.service_role_id).map(p => p.service_role_id));
+    const allAssignments = db.assignments.filter(a => a.template_id === selectedTemplate.id);
+
+    const programLinked = allAssignments
+      .filter(a => programRoleIds.has(a.service_role_id))
+      .map(a => {
+        const role = db.serviceRoles.find(r => r.id === a.service_role_id);
+        const person = a.person_id ? db.persons.find(p => p.id === a.person_id) : null;
+        return { ...a, roleName: role?.name || 'Ukjent', personName: person?.name || 'Ledig' };
+      });
+
+    const manual = allAssignments
+      .filter(a => !programRoleIds.has(a.service_role_id))
+      .map(a => {
+        const role = db.serviceRoles.find(r => r.id === a.service_role_id);
+        const person = a.person_id ? db.persons.find(p => p.id === a.person_id) : null;
+        return { ...a, roleName: role?.name || 'Ukjent', personName: person?.name || 'Ledig' };
+      });
+
+    return { programLinked, manual };
+  }, [selectedTemplate, currentTemplateProgramItems, db.assignments, db.serviceRoles, db.persons]);
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    if (draggedIndex !== null && dragOverIndex !== null && draggedIndex !== dragOverIndex && selectedTemplate) {
+      const items = [...currentTemplateProgramItems];
+      const [reorderedItem] = items.splice(draggedIndex, 1);
+      items.splice(dragOverIndex, 0, reorderedItem);
+      
+      const updatedItemsMap = new Map(items.map((item, idx) => [item.id, idx]));
+      
+      setDb(prev => ({
+        ...prev,
+        programItems: prev.programItems.map(p => {
+          if (p.template_id === selectedTemplate.id && updatedItemsMap.has(p.id)) {
+            return { ...p, order: updatedItemsMap.get(p.id)! };
+          }
+          return p;
+        })
+      }));
+    }
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
 
   const handleCreateTemplate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +218,7 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
     setProgDuration(5);
     setProgRoleId('');
     setProgGroupId('');
+    setProgPersonId('');
     setIsProgramModalOpen(true);
   };
 
@@ -71,6 +228,7 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
     setProgDuration(item.duration_minutes);
     setProgRoleId(item.service_role_id || '');
     setProgGroupId(item.group_id || '');
+    setProgPersonId(item.person_id || '');
     setIsProgramModalOpen(true);
   };
 
@@ -79,16 +237,27 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
     if (!selectedTemplate || !progTitle.trim()) return;
 
     if (editingProgramItem) {
-      setDb(prev => ({
-        ...prev,
-        programItems: prev.programItems.map(p => p.id === editingProgramItem.id ? {
-          ...p,
+      if (onUpdateProgramItem) {
+        onUpdateProgramItem(editingProgramItem.id, {
           title: progTitle,
           duration_minutes: progDuration,
           service_role_id: progRoleId || null,
-          group_id: progGroupId || null
-        } : p)
-      }));
+          group_id: progGroupId || null,
+          person_id: progPersonId || null
+        });
+      } else {
+        setDb(prev => ({
+          ...prev,
+          programItems: prev.programItems.map(p => p.id === editingProgramItem.id ? {
+            ...p,
+            title: progTitle,
+            duration_minutes: progDuration,
+            service_role_id: progRoleId || null,
+            group_id: progGroupId || null,
+            person_id: progPersonId || null
+          } : p)
+        }));
+      }
     } else {
       const items = db.programItems.filter(p => p.template_id === selectedTemplate.id);
       const newItem: ProgramItem = {
@@ -98,6 +267,7 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
         duration_minutes: progDuration,
         service_role_id: progRoleId || null,
         group_id: progGroupId || null,
+        person_id: progPersonId || null,
         order: items.length
       };
       onAddProgramItem(newItem);
@@ -108,8 +278,16 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
     setEditingProgramItem(null);
   };
 
+  const handleUpdateManualAssignment = (id: UUID, personId: string | null) => {
+    setDb(prev => ({
+      ...prev,
+      assignments: prev.assignments.map(a => a.id === id ? { ...a, person_id: personId } : a)
+    }));
+  };
+
   const handleAddMasterRole = (roleId: UUID) => {
     if (!selectedTemplate) return;
+    
     const newAssignment: Assignment = {
       id: crypto.randomUUID(),
       template_id: selectedTemplate.id,
@@ -125,7 +303,7 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
   };
 
   const handleDeleteAssignment = (id: UUID) => {
-    if (!confirm('Vil du fjerne denne vakt-rollen fra master-malen?')) return;
+    if (!confirm('Vil du fjerne denne tilleggsvakten fra master-malen?')) return;
     setDb(prev => ({
       ...prev,
       assignments: prev.assignments.filter(a => a.id !== id)
@@ -150,10 +328,25 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
     }
   };
 
-  const instructionRole = db.serviceRoles.find(sr => sr.id === viewingRoleInstructionsId);
+  const getCategorizedPersons = (roleId?: string | null, groupId?: string | null) => {
+    const allActive = db.persons.filter(p => p.is_active);
+    let recommended: Person[] = [];
+    
+    if (roleId) {
+      const teamLinks = db.groupServiceRoles.filter(gsr => gsr.service_role_id === roleId);
+      const teamIds = teamLinks.map(l => l.group_id);
+      const members = db.groupMembers.filter(gm => teamIds.includes(gm.group_id));
+      recommended = allActive.filter(p => members.some(m => m.person_id === p.id));
+    } else if (groupId) {
+      const members = db.groupMembers.filter(gm => gm.group_id === groupId);
+      recommended = allActive.filter(p => members.some(m => m.person_id === p.id));
+    }
+    const others = allActive.filter(p => !recommended.some(r => r.id === p.id));
+    return { recommended, others };
+  };
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto animate-in fade-in zoom-in-95 duration-500">
+    <div className="space-y-8 max-w-5xl mx-auto animate-in fade-in zoom-in-95 duration-500 text-left">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-slate-800 flex items-center gap-3">
@@ -209,76 +402,94 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
                 </div>
               </div>
               
-              <div className="p-8 space-y-10">
+              <div className="p-8 space-y-8">
+                {/* SEKSJON 1: KJØREPLAN */}
                 <section>
                   <div className="flex items-center justify-between mb-6">
                     <h5 className="font-bold text-slate-800 flex items-center gap-2">
                       <Clock size={18} className="text-indigo-500" />
                       Standard Kjøreplan
                     </h5>
-                    <button 
-                      onClick={handleOpenAddModal}
-                      className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1"
-                    >
-                      <Plus size={14} /> Ny Aktivitet
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <p className="text-[10px] text-slate-400 italic">Dra og slipp for å endre rekkefølge</p>
+                      <button 
+                        onClick={handleOpenAddModal}
+                        className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1"
+                      >
+                        <Plus size={14} /> Ny Aktivitet
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="space-y-2">
-                    {db.programItems
-                      .filter(p => p.template_id === selectedTemplate.id)
-                      .sort((a, b) => a.order - b.order)
-                      .map((item, idx) => {
+                    {currentTemplateProgramItems.map((item, idx) => {
                         const role = db.serviceRoles.find(r => r.id === item.service_role_id);
                         const group = db.groups.find(g => g.id === item.group_id);
+                        const person = item.person_id ? db.persons.find(p => p.id === item.person_id) : null;
+                        
+                        const isDragged = draggedIndex === idx;
+                        const isOver = dragOverIndex === idx;
+
                         return (
-                          <div key={item.id} className="flex items-center gap-4 p-3 bg-slate-50 border border-slate-100 rounded-xl group">
-                            <span className="text-xs font-bold text-slate-400 w-4">{idx + 1}</span>
+                          <div 
+                            key={item.id} 
+                            draggable
+                            onDragStart={() => handleDragStart(idx)}
+                            onDragOver={(e) => handleDragOver(e, idx)}
+                            onDragEnd={handleDragEnd}
+                            className={`flex items-center gap-4 p-3 bg-slate-50 border rounded-xl transition-all group ${isDragged ? 'opacity-30' : 'opacity-100'} ${isOver ? 'border-indigo-500 bg-indigo-50/30' : 'border-slate-100'}`}
+                          >
+                            <div className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-500">
+                              <GripVertical size={16} />
+                            </div>
                             <div className="flex-1">
                               <p className="text-sm font-bold text-slate-800">{item.title}</p>
-                              <div className="flex gap-3 mt-0.5">
+                              <div className="flex flex-wrap gap-3 mt-1.5">
                                 <span className="text-[10px] text-slate-500 flex items-center gap-1">
                                   <Clock size={10} /> {item.duration_minutes} min
                                 </span>
                                 {role && (
-                                  <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                                  <span className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider flex items-center gap-1 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
                                     <Shield size={10} /> {role.name}
                                   </span>
                                 )}
                                 {group && (
-                                  <span className="text-[10px] text-teal-500 font-bold uppercase tracking-wider flex items-center gap-1">
+                                  <span className="text-[10px] text-teal-600 font-bold uppercase tracking-wider flex items-center gap-1 bg-teal-50 px-2 py-0.5 rounded border border-teal-100">
                                     <Users size={10} /> {group.name}
+                                  </span>
+                                )}
+                                {person && (
+                                  <span className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                    <UserCheck size={10} /> {person.name}
                                   </span>
                                 )}
                               </div>
                             </div>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-colors">
-                              <button 
-                                onClick={() => handleOpenEditModal(item)}
-                                className="p-1.5 text-slate-300 hover:text-indigo-600 transition-colors"
-                              >
-                                <Edit2 size={14} />
-                              </button>
-                              <button 
-                                onClick={() => onDeleteProgramItem(item.id)}
-                                className="p-1.5 text-slate-300 hover:text-red-500 transition-colors"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              <button onClick={() => handleOpenEditModal(item)} className="p-1.5 text-slate-300 hover:text-indigo-600"><Edit2 size={14} /></button>
+                              <button onClick={() => onDeleteProgramItem(item.id)} className="p-1.5 text-slate-300 hover:text-red-500"><Trash2 size={14} /></button>
                             </div>
                           </div>
                         );
                       })}
-                    {db.programItems.filter(p => p.template_id === selectedTemplate.id).length === 0 && (
-                      <p className="text-center py-6 text-slate-400 text-xs italic bg-slate-50 border border-dashed rounded-2xl">Ingen aktiviteter definert i kjøreplanen.</p>
-                    )}
                   </div>
                 </section>
 
-                <hr className="border-slate-100" />
+                {/* MELLOMKJØTT: SYNKRONISERINGSKNAPP */}
+                <div className="py-2 flex justify-center border-y border-slate-50">
+                  <button 
+                    disabled={!isUnsynced}
+                    onClick={handleSyncStaffing}
+                    className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all shadow-lg ${isUnsynced ? 'bg-indigo-600 text-white hover:bg-indigo-700 scale-105' : 'bg-slate-100 text-slate-400 grayscale cursor-not-allowed'}`}
+                  >
+                    {isUnsynced ? <RefreshCw className="animate-spin-slow" size={20} /> : <Save size={20} />}
+                    Lagre og synkroniser bemanning
+                  </button>
+                </div>
 
-                <section>
-                  <div className="flex items-center justify-between mb-6">
+                {/* SEKSJON 2: BEMANNING */}
+                <section className="space-y-6">
+                  <div className="flex items-center justify-between">
                     <h5 className="font-bold text-slate-800 flex items-center gap-2">
                       <Shield size={18} className="text-indigo-500" />
                       Standard Bemanning (Vaktliste)
@@ -287,52 +498,86 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
                       onClick={() => setIsAddRoleModalOpen(true)}
                       className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1"
                     >
-                      <Plus size={14} /> Legg til rolle
+                      <Plus size={14} /> Legg til tilleggsvakt
                     </button>
                   </div>
+
+                  {isUnsynced && (
+                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 animate-pulse">
+                      <AlertCircle className="text-amber-500" size={20} />
+                      <p className="text-xs font-bold text-amber-800">Endringer i kjøreplanen er ikke synkronisert ennå. Klikk på knappen over for å oppdatere vaktlisten.</p>
+                    </div>
+                  )}
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {db.assignments
-                      .filter(a => a.template_id === selectedTemplate.id)
-                      .map(assign => {
-                        const role = db.serviceRoles.find(r => r.id === assign.service_role_id);
-                        return (
-                          <div 
-                            key={assign.id} 
-                            onClick={() => setViewingRoleInstructionsId(role?.id || null)}
-                            className="p-4 rounded-2xl border border-slate-100 bg-white hover:border-indigo-200 transition-all flex items-center justify-between group shadow-sm cursor-pointer"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                                <Shield size={16} />
-                              </div>
-                              <span className="font-semibold text-slate-700">{role?.name}</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Info size={14} className="text-slate-300" />
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleDeleteAssignment(assign.id); }}
-                                className="p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                              >
-                                <Trash2 size={16} />
-                              </button>
+                    {/* PROGRAM-LINKEDE ROLLER */}
+                    {staffingData.programLinked.map(assign => (
+                      <div 
+                        key={assign.id} 
+                        className="p-4 rounded-2xl border border-slate-100 bg-slate-50/50 flex items-center justify-between group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-slate-200 rounded-lg text-slate-500">
+                            <Lock size={16} />
+                          </div>
+                          <div>
+                            <span className="font-bold text-slate-700 text-sm">{assign.roleName}</span>
+                            <div className="flex items-center gap-2 mt-1">
+                               <p className="text-[9px] text-indigo-500 font-bold uppercase tracking-tighter">Fra kjøreplan</p>
+                               <span className="text-[10px] font-bold text-slate-900">• {assign.personName}</span>
                             </div>
                           </div>
-                        );
-                      })}
-                    {db.assignments.filter(a => a.template_id === selectedTemplate.id).length === 0 && (
-                      <p className="col-span-full text-center py-6 text-slate-400 text-xs italic bg-slate-50 border border-dashed rounded-2xl">Ingen vakter lagt til i denne malen.</p>
-                    )}
+                        </div>
+                        <Info size={14} className="text-slate-300" />
+                      </div>
+                    ))}
+
+                    {/* MANUELLE ROLLER */}
+                    {staffingData.manual.map(assign => {
+                       const { recommended, others } = getCategorizedPersons(assign.service_role_id);
+                       return (
+                        <div 
+                          key={assign.id} 
+                          className="p-4 rounded-2xl border border-slate-100 bg-white hover:border-indigo-200 shadow-sm flex flex-col gap-3 group"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+                                <Shield size={16} />
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-700 text-sm">{assign.roleName}</span>
+                                <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">Tilleggsvakt (Manuelt lagt til)</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => handleDeleteAssignment(assign.id)}
+                              className="p-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                          
+                          <select 
+                            value={assign.person_id || ''} 
+                            onChange={(e) => handleUpdateManualAssignment(assign.id, e.target.value || null)}
+                            className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="">Tildel person i mal...</option>
+                            {recommended.length > 0 && (
+                              <optgroup label="Anbefalt Team">
+                                {recommended.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              </optgroup>
+                            )}
+                            <optgroup label="Alle Personer">
+                              {others.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </optgroup>
+                          </select>
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
-
-                <div className="bg-slate-900 text-slate-300 p-6 rounded-2xl flex gap-4">
-                  <div className="mt-1"><Info size={20} className="text-amber-400" /></div>
-                  <div className="text-sm">
-                    <p className="font-bold text-white mb-1">Snapshot-logikk</p>
-                    <p className="leading-relaxed">Endringer du gjør i malen vil <strong>ikke</strong> påvirke eksisterende hendelser i kalenderen. Kun nye hendelser vil arve dette oppsettet.</p>
-                  </div>
-                </div>
               </div>
             </div>
           ) : (
@@ -343,56 +588,94 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
         </main>
       </div>
 
-      {/* Instruks-Modal */}
-      {viewingRoleInstructionsId && instructionRole && (
-        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setViewingRoleInstructionsId(null)}></div>
-          <div className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 text-left max-h-[80vh] flex flex-col">
-            <div className="p-6 bg-indigo-700 text-white flex justify-between items-center shrink-0">
-              <div className="flex items-center gap-3">
-                <Library size={24} />
-                <div>
-                  <h3 className="text-lg font-bold leading-none">{instructionRole.name}</h3>
-                  <p className="text-xs text-indigo-200 mt-1 uppercase tracking-widest font-bold">Rolle-instruks fra katalogen</p>
-                </div>
-              </div>
-              <button onClick={() => setViewingRoleInstructionsId(null)} className="p-1 hover:bg-indigo-600 rounded-lg transition-colors"><X size={24} /></button>
+      {/* Program Item Add/Edit Modal */}
+      {isProgramModalOpen && selectedTemplate && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setIsProgramModalOpen(false); setEditingProgramItem(null); }}></div>
+          <div className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
+            <div className="p-6 bg-indigo-700 text-white flex justify-between items-center">
+              <h3 className="text-xl font-bold">{editingProgramItem ? 'Rediger Aktivitet' : 'Ny Aktivitet'}</h3>
+              <button onClick={() => { setIsProgramModalOpen(false); setEditingProgramItem(null); }}><X size={24} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-8 space-y-6">
-              {instructionRole.description && (
-                <div>
-                  <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Beskrivelse</h4>
-                  <p className="text-sm text-slate-600 leading-relaxed">{instructionRole.description}</p>
-                </div>
-              )}
+            <form onSubmit={handleSaveProgramItem} className="p-6 space-y-4">
               <div>
-                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-                  <ListChecks size={14}/> Sjekkliste for tjenesten
-                </h4>
-                <div className="space-y-3">
-                  {instructionRole.default_instructions.map((inst, i) => (
-                    <div key={i} className="flex gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100 text-sm text-slate-700 font-medium">
-                      <div className="w-5 h-5 rounded-full border-2 border-indigo-200 shrink-0 flex items-center justify-center text-[10px] font-bold text-indigo-400">{i+1}</div>
-                      {inst}
-                    </div>
-                  ))}
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Tittel / Hva skjer?</label>
+                <input autoFocus required type="text" value={progTitle} onChange={e => setProgTitle(e.target.value)} className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="f.eks. Åpning & Velkomst" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1 flex items-center gap-1.5"><Shield size={12}/> Tjenesterolle</label>
+                  <select 
+                    value={progRoleId} 
+                    onChange={e => { setProgRoleId(e.target.value); if(e.target.value) setProgGroupId(''); }} 
+                    className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                  >
+                    <option value="">Ingen valgt</option>
+                    {db.serviceRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1 flex items-center gap-1.5"><Users size={12}/> Team (Gruppe)</label>
+                  <select 
+                    value={progGroupId} 
+                    onChange={e => { 
+                      const groupId = e.target.value;
+                      setProgGroupId(groupId); 
+                      if(groupId) {
+                        setProgRoleId('');
+                        const leader = db.groupMembers.find(gm => gm.group_id === groupId && gm.role === GroupRole.LEADER);
+                        if (leader) setProgPersonId(leader.person_id);
+                      }
+                    }} 
+                    className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                  >
+                    <option value="">Ingen valgt</option>
+                    {db.groups.filter(g => g.category === GroupCategory.SERVICE).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
                 </div>
               </div>
-            </div>
-            <div className="p-6 border-t bg-slate-50 shrink-0 flex justify-end">
-              <button onClick={() => setViewingRoleInstructionsId(null)} className="px-8 py-2.5 bg-slate-900 text-white rounded-xl font-bold text-xs">Lukk</button>
-            </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1 flex items-center gap-1.5"><UserPlus size={12}/> Ansvarlig person i mal</label>
+                <select 
+                  value={progPersonId} 
+                  onChange={e => setProgPersonId(e.target.value)} 
+                  className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm"
+                >
+                  <option value="">Ingen fast person (Valgfritt)</option>
+                  {(() => {
+                    const { recommended, others } = getCategorizedPersons(progRoleId, progGroupId);
+                    return (
+                      <>
+                        {recommended.length > 0 && (
+                          <optgroup label="Anbefalt Team / Leder">
+                            {recommended.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </optgroup>
+                        )}
+                        <optgroup label="Alle Personer">
+                          {others.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </optgroup>
+                      </>
+                    );
+                  })()}
+                </select>
+              </div>
+
+              <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition-all">
+                {editingProgramItem ? 'Oppdater' : 'Legg til'}
+              </button>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Velg fra katalog modal */}
+      {/* Katalogrolle Velger-Modal */}
       {isAddRoleModalOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsAddRoleModalOpen(false)}></div>
           <div className="relative bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden text-left animate-in zoom-in-95">
             <div className="p-4 bg-indigo-700 text-white flex justify-between items-center">
-              <h3 className="text-sm font-bold uppercase tracking-tight">Legg til rolle i mal</h3>
+              <h3 className="text-sm font-bold uppercase tracking-tight">Velg rolle fra katalog</h3>
               <button onClick={() => setIsAddRoleModalOpen(false)}><X size={18}/></button>
             </div>
             <div className="p-4 space-y-2 max-h-[60vh] overflow-y-auto">
@@ -411,47 +694,7 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
         </div>
       )}
 
-      {isProgramModalOpen && selectedTemplate && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setIsProgramModalOpen(false); setEditingProgramItem(null); }}></div>
-          <div className="relative bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 text-left">
-            <div className="p-6 bg-indigo-700 text-white flex justify-between items-center">
-              <h3 className="text-xl font-bold">{editingProgramItem ? 'Rediger Aktivitet' : 'Ny Aktivitet'}</h3>
-              <button onClick={() => { setIsProgramModalOpen(false); setEditingProgramItem(null); }}><X size={24} /></button>
-            </div>
-            <form onSubmit={handleSaveProgramItem} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Tittel / Hva skjer?</label>
-                <input autoFocus required type="text" value={progTitle} onChange={e => setProgTitle(e.target.value)} className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" placeholder="f.eks. Åpning & Velkomst" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Varighet (minutter)</label>
-                <input required type="number" min="1" value={progDuration} onChange={e => setProgDuration(parseInt(e.target.value) || 5)} className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Knytt til Rolle (Katalog)</label>
-                  <select value={progRoleId} onChange={e => { setProgRoleId(e.target.value); if(e.target.value) setProgGroupId(''); }} className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
-                    <option value="">Ingen valgt</option>
-                    {db.serviceRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Knytt til Team (Gruppe)</label>
-                  <select value={progGroupId} onChange={e => { setProgGroupId(e.target.value); if(e.target.value) setProgRoleId(''); }} className="w-full px-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-sm">
-                    <option value="">Ingen valgt</option>
-                    {db.groups.filter(g => g.category === GroupCategory.SERVICE).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-                  </select>
-                </div>
-              </div>
-              <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg hover:bg-indigo-700 transition-all">
-                {editingProgramItem ? 'Oppdater' : 'Legg til i kjøreplan'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
+      {/* Ny Mal Modal */}
       {isTemplateModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsTemplateModalOpen(false)}></div>
@@ -471,6 +714,7 @@ const MasterMenu: React.FC<Props> = ({ db, setDb, onCreateRecurring, onAddProgra
         </div>
       )}
 
+      {/* Planlegg Serie Modal */}
       {isRecurringModalOpen && selectedTemplate && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm shadow-xl" onClick={() => setIsRecurringModalOpen(false)}></div>

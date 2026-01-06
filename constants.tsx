@@ -23,9 +23,9 @@ export const INITIAL_DATA: AppState = {
     { id: 'gm6', group_id: 'g3', person_id: 'p7', role: GroupRole.MEMBER, service_role_id: 'sr9' },
   ],
   serviceRoles: [
-    { 
-      id: 'sr1', 
-      name: 'Møteleder', 
+    {
+      id: 'sr1',
+      name: 'Møteleder',
       default_instructions: [
         'Snakke med taler om tema',
         'Lytte til Gud og finne ut hvor du vil med gudstjenesten',
@@ -42,156 +42,155 @@ export const INITIAL_DATA: AppState = {
         'Holde styr på tida og si ifra til lovsangsleder at de skal begynne gudstjenesten',
         'Lede menigheten gjennom gudstjenesten (Bli leda av Gud, observere menigheten. Vær åpen for at kjøreplanen kan endres underveis - i samarbeid med lovsangsleder)',
         'Legge til rette for å sitte igjen i salen når gudstjenesten er ferdig hvis du ønsker det',
-        'Ting som skal være med i gudstjenesten som du har ansvar for: Velkommen, bønn, søndagens info, informere om nattverd og bønnevandring, informere om kollekt, avslutning og sendelse, informere om kirkekaffe',
-        'Ting som kan være med i gudstjenesten som du eventuelt har ansvar for: Bibellesning, vitnesbyrd, bønn for taleren, informere om at det skal være rolig i salen etter møtet hvis du ønsker det, eventuelt andre ting som du ønsker skal være med (Instrumental, solosang, dramastykke, stillhet, delestund e.l.)'
-      ], 
-      is_active: true 
+        'Ansvar for: Velkommen, bønn, søndagens info, informere om nattverd/bønnevandring, kollekt, avslutning/sendelse, kirkekaffe',
+        'Eventuelt ansvar for: Bibellesning, vitnesbyrd, bønn for taleren, stillhet/delestund o.l.'
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr2', 
-      name: 'Taler', 
+    {
+      id: 'sr2',
+      name: 'Taler',
       default_instructions: [
         'Lage preken og forberede deg åndelig',
         'Ta kontakt med møteleder og lovsangsleder om tema',
-        'Sende eventuell PowerPoint eller annet som skal opp på skjermen til den som skal styre bildet den gjeldende søndagen',
+        'Sende eventuell PowerPoint eller annet som skal opp på skjermen til bildetekniker i god tid',
         'Møte opp senest kl. 10.00 for å være med på bønnemøtet',
         'Være med på gjennomgang av gudstjenesten kl. 10.45',
         'Holde preken'
-      ], 
-      is_active: true 
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr3', 
-      name: 'Forbønn', 
+    {
+      id: 'sr3',
+      name: 'Forbønn',
       default_instructions: [
         'Forberede deg åndelig',
         'Være med og be på bønnemøtet søndag før gudstjenesten kl. 10.00 - 10.45',
         'Be for dem som ønsker det under gudstjenesten (Etter nattverden)',
         'Bli igjen i salen litt etter møtet er ferdig for å se om noen vil bli bedt for'
-      ], 
-      is_active: true 
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr4', 
-      name: 'Barnekirke', 
+    {
+      id: 'sr4',
+      name: 'Barnekirke',
       default_instructions: [
         'Rigge klart det du trenger til opplegget du skal ha',
         'Finne frem tegnesaker til barna på et av bordene i møtesalen',
         'Eventuelt samarbeide med møtevert/gudstjenesteleder om bønnestasjon tilpasset barna',
-        'Husk at du må ha hentet alt du trenger oppefra før kl. 10.00 (For å ikke forstyrre bønnemøtet)',
+        'Husk at du må ha hentet alt du trenger før kl. 10.00 (For å ikke forstyrre bønnemøtet)',
         'Bli med på bønnemøtet kl. 10.30 (Du kan gjerne komme fra kl. 10.00)',
         'Være med på gjennomgang av gudstjenesten kl. 10.45',
         'Ha samling/undervisning med barna under talen',
         'Sørge for at barna er tilbake i møtesalen innen nattverden',
         'Rigge ned alt du har rigga opp'
-      ], 
-      is_active: true 
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr5', 
-      name: 'Lovsang', 
+    {
+      id: 'sr5',
+      name: 'Lovsang',
       default_instructions: [
         'Passe på at du får med deg iPadene hjem fra gudstjenesten',
-        'Ta kontakt med taler om tema',
-        'Ta kontakt med møteleder om hva han/hun vil med gudstjenesten, og være i dialog om setliste og kjøreplan',
-        'Lage setliste, fikse blekker i riktig toneart og sende dette til de som skal spille (Helst en uke før eller tidligere, senest 5 dager før)',
+        'Ta kontakt med taler og møteleder om tema og visjon for gudstjenesten',
+        'Lage setliste, fikse blekker i riktig toneart og sende til teamet (Senest 5 dager før)',
         'Organisere øving og oppmøtetidspunkt på søndagen',
-        'Ta kontakt med lydmann om oppmøte på søndagen (Senest lørdag ettermiddag)',
-        'Sende setliste til den som skal styre bildet den gjeldende søndagen',
-        'Forberede deg åndelig (Lovsynge, be, lese Bibelen, lytte til Gud o.l.)',
-        'Passe på at du har med iPadene med blekker i riktig toneart, og at de er ladet opp (Både til øvelse og selve gudstjenesten)',
-        'Kunne sangene godt nok til at du kan lede teamet, være i tilbedelse selv og lede salen inn i det',
-        'Være ferdig med å øve i salen senest kl. 10.30 og bli med på bønnemøtet som starter da',
+        'Ta kontakt med lydmann om oppmøte (Senest lørdag ettermiddag)',
+        'Sende setliste til bildetekniker i god tid (Si ifra om nye sanger)',
+        'Forberede deg åndelig (Lovsynge, be, lese Bibelen, lytte til Gud)',
+        'Sørge for at iPadene er ladet opp med riktige blekker',
+        'Kunne sangene godt nok til å lede teamet og salen inn i tilbedelse',
+        'Være ferdig med øving senest kl. 10.30 for å delta på bønnemøtet',
         'Være med på gjennomgang av gudstjenesten kl. 10.45',
-        'Holde styr på tida, og være klar over når dere skal opp og ned på scenen',
-        'Lede menigheten i lovsang og tilbedelse (Bli leda av Gud, observere menigheten. Vær åpen for at kjøreplanen kan endres underveis - i samarbeid med møteleder)'
-      ], 
-      is_active: true 
+        'Lede menigheten i lovsang (Være åpen for endringer i samarbeid med møteleder)'
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr6', 
-      name: 'Lyd', 
+    {
+      id: 'sr6',
+      name: 'Lyd',
       default_instructions: [
         'Møte opp søndag morgen etter avtale med lovsangsleder',
         'Ta ansvar for linjesjekk og lydprøve',
-        'Bli med på bønnemøtet kl. 10.30 (Du kan gjerne komme fra kl. 10.00)',
+        'Bli med på bønnemøtet kl. 10.30 (Gjerne fra kl. 10.00)',
         'Være med på gjennomgang av gudstjenesten kl. 10.45',
-        'Styre lyden (Lytte aktivt, følge med på tegn fra lovsangsteamet)',
+        'Styre lyden aktivt (Lytte og følge med på tegn fra teamet)',
         'Sette på rolig lovsang i det gudstjenesten er ferdig'
-      ], 
-      is_active: true 
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr7', 
-      name: 'Bilde', 
+    {
+      id: 'sr7',
+      name: 'Bilde',
       default_instructions: [
         'Møte opp på søndag senest kl. 10.00',
-        'Gjøre deg kjent med setlista, og være forberedt på at den kan endres underveis',
-        'Gjøre deg kjent med eventuelle andre ting som skal opp på skjermen (Info, videosnutt, PowerPoint e.l)',
-        'Bli med på bønnemøtet kl. 10.30 (Du kan gjerne komme fra kl. 10.00)',
+        'Gjøre deg kjent med setlista og forberede eventuelle endringer',
+        'Gjøre deg kjent med info, videoer eller PowerPoint som skal vises',
+        'Bli med på bønnemøtet kl. 10.30 (Gjerne fra kl. 10.00)',
         'Være med på gjennomgang av gudstjenesten kl. 10.45',
-        'Styre tekst og eventuelt annet som skal opp på skjermen'
-      ], 
-      is_active: true 
+        'Styre tekst og alt visuelt innhold under gudstjenesten'
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr8', 
-      name: 'Rigging', 
+    {
+      id: 'sr8',
+      name: 'Rigging',
       default_instructions: [
         'Rigge opp og ned kirkekaffebordene',
-        'Ta kontakt med lovsangsleder om hvilke instrumenter som skal rigges opp',
-        'Rigge opp og ned scenen (For mer detaljer om dette, snakk med Lars)'
-      ], 
-      is_active: true 
+        'Ta kontakt med lovsangsleder om hvilke instrumenter som skal rigges',
+        'Rigge opp og ned scenen (Detaljer avklares med Lars)'
+      ],
+      is_active: true
     },
-    { 
-      id: 'sr9', 
-      name: 'Møtevert', 
+    {
+      id: 'sr9',
+      name: 'Møtevert',
       default_instructions: [
-        'Rigge klart nattverdsbordet (Bord, duk, glass, juice i karaffel, nattverdsoblater + bord, duk og brett til å sette brukte glass på)',
-        'Rigge opp de faste bønnepostene (Lysgloben, korset med byrdesteiner)',
-        'Eventuelt rigge opp andre bønneposter, snakk med møteleder (Bønnekrukke, noe tilpasset barna, takkevegg e. l.)',
+        'Rigge klart nattverdsbordet (Duk, glass, juice, oblater, brett til brukte glass)',
+        'Rigge opp faste bønneposter (Lysgloben, korset med byrdesteiner)',
+        'Eventuelt rigge andre bønneposter etter avtale med møteleder',
         'Sjekke at det er nok små lys til globen',
-        'Husk at du må ha hentet alt du trenger oppefra før kl. 10.00 (For å ikke forstyrre bønnemøtet)',
-        'Bli med på bønnemøtet kl. 10.30 (Du kan gjerne komme fra kl. 10.00)',
+        'Hent alt utstyr før kl. 10.00 (For å ikke forstyrre bønnemøtet)',
+        'Bli med på bønnemøtet kl. 10.30',
         'Ønske velkommen i døra fra kl. 10.45 til kl. 11.15',
-        'Rydde brettene med nattverdsglass ut på kjøkkenet når nattverden er ferdig',
-        'Bidra med andre praktiske ting som eventuelt oppstår underveis i gudstjenesten',
+        'Rydde nattverdsglass ut på kjøkkenet etter nattverden',
+        'Slukke levende lys og rigge ned utstyr etter gudstjenesten'
+      ],
+      is_active: true
+    },
+    {
+      id: 'sr10',
+      name: 'Kjøkken',
+      default_instructions: [
+        'Koke kaffe og tevann ferdig senest kl. 10.45',
+        'Sette frem te, kakao, saft, vann og twist/annet godt',
+        'Sette frem all mat og kaker til kirkekaffen',
+        'Ta ansvar for oppvask etter kirkekaffen',
+        'Se over salen for brukte kopper og nattverdsglass når møtet er ferdig',
+        'Rydde på plass alt utstyr'
+      ],
+      is_active: true
+    },
+    {
+      id: 'sr11',
+      name: 'Baking',
+      default_instructions: [
+        'Bake kake(r) og ta med til gudstjenesten',
+        'Koordiner med kjøkkenansvarlig for den aktuelle søndagen'
+      ],
+      is_active: true
+    },
+    {
+      id: 'sr12',
+      name: 'Pynting',
+      default_instructions: [
+        'Pynte nattverdsbordet (Lys og blomst)',
+        'Pynte bordene i kirkekafferommet og baren ved miksepulten',
+        'Tenne lys (Nattverdsbord, lysglobe, kirkekafferom)',
         'Slukke levende lys når gudstjenesten er over',
-        'Rigge ned alt som du rigga opp'
-      ], 
-      is_active: true 
-    },
-    { 
-      id: 'sr10', 
-      name: 'Kjøkken', 
-      default_instructions: [
-        'Koke kaffe og tevann ferdig til senest kl. 10.45 + sette frem te, kakao og twist/annet godt',
-        'Sette frem diverse mat og drikke til kirkekaffen (Kaffe, te, kakao, saft, vann, mat og kaker)',
-        'Ta ansvar for oppvask i etterkant av kirkekaffen',
-        'Se over møtesalen etter brukte kaffekopper og nattverdsglass når gudstjenesten er ferdig',
-        'Rydde på plass alt du har funnet frem'
-      ], 
-      is_active: true 
-    },
-    { 
-      id: 'sr11', 
-      name: 'Baking', 
-      default_instructions: [
-        'Bake kake(r) og ta med til gudstjenesten (Snakk med den som har ansvaret for kjøkkenet den gjeldende søndagen)'
-      ], 
-      is_active: true 
-    },
-    { 
-      id: 'sr12', 
-      name: 'Pynting', 
-      default_instructions: [
-        'Pynte (Lys og blomst til nattverdsbordet, noe på bordene i kirkekafferommet og noe på baren ved miksepulten)',
-        'Tenne lys (Nattverdsbordet og lysgloben + kirkekafferommet)',
-        'Slukke levende lys når gudstjenesten er over',
-        'Rigge ned alt som du rigga opp'
-      ], 
-      is_active: true 
+        'Rigge ned pynt og rydde opp'
+      ],
+      is_active: true
     }
   ],
   groupServiceRoles: [
@@ -222,4 +221,15 @@ export const INITIAL_DATA: AppState = {
     { id: 'pi9', template_id: 't1', title: 'Tale / undervisning', duration_minutes: 20, service_role_id: 'sr2', order: 6 },
   ],
   tasks: [],
+  noticeMessages: [
+    {
+      id: 'm1',
+      sender_id: 'p5',
+      recipient_role: CoreRole.TEAM_LEADER,
+      title: 'Husk lederforum mandag!',
+      content: 'Vi gleder oss til å se alle gruppeledere til en samling på mandag kl 19:00. Vi skal snakke om visjonen for høsten.',
+      created_at: new Date(Date.now() - 86400000).toISOString()
+    }
+  ],
+  changeLogs: []
 };

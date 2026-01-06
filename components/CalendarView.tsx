@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
-import { AppState, EventOccurrence, ServiceRole, UUID, ProgramItem, GroupCategory, Person } from '../types';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, X, Trash2, ListChecks, Info, CheckCircle2, Calendar as CalendarIcon, Repeat, LayoutGrid, List as ListIcon, Clock, Users, User, Shield, AlertTriangle, RefreshCw, UserCheck, Sparkles, ArrowRight, Library, GripVertical, Edit2 } from 'lucide-react';
+import { AppState, EventOccurrence, ServiceRole, UUID, ProgramItem, GroupCategory, Person, CoreRole } from '../types';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, X, Trash2, ListChecks, Info, CheckCircle2, Calendar as CalendarIcon, Repeat, LayoutGrid, List as ListIcon, Clock, Users, User, Shield, AlertTriangle, RefreshCw, UserCheck, Sparkles, ArrowRight, Library, GripVertical, Edit2, History } from 'lucide-react';
 
 interface Props {
   db: AppState;
@@ -24,7 +24,7 @@ const CalendarView: React.FC<Props> = ({
   const [selectedOccId, setSelectedOccId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('calendar');
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [activeTab, setActiveTab] = useState<'staff' | 'program'>('program');
+  const [activeTab, setActiveTab] = useState<'staff' | 'program' | 'history'>('program');
 
   // Modal States
   const [isProgramModalOpen, setIsProgramModalOpen] = useState(false);
@@ -191,6 +191,13 @@ const CalendarView: React.FC<Props> = ({
 
   const instructionRole = db.serviceRoles.find(sr => sr.id === roleInstructionsId);
 
+  const logs = useMemo(() => {
+    if (!selectedOccId) return [];
+    return (db.changeLogs || [])
+      .filter(l => l.occurrence_id === selectedOccId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [db.changeLogs, selectedOccId]);
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-20 md:pb-0 animate-in fade-in duration-500 text-left">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -267,7 +274,8 @@ const CalendarView: React.FC<Props> = ({
           
           <div className="flex bg-slate-50 border-b shrink-0 px-6">
             <button onClick={() => setActiveTab('program')} className={`px-6 py-3 text-xs font-bold border-b-2 transition-all ${activeTab === 'program' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>1. Kjøreplan</button>
-            <button onClick={() => setActiveTab('staff')} className={`px-6 py-3 text-xs font-bold border-b-2 transition-all ${activeTab === 'staff' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>2. Vaktplan & Bemanning</button>
+            <button onClick={() => setActiveTab('staff')} className={`px-6 py-3 text-xs font-bold border-b-2 transition-all ${activeTab === 'staff' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>2. Bemanningsliste</button>
+            <button onClick={() => setActiveTab('history')} className={`px-6 py-3 text-xs font-bold border-b-2 transition-all ${activeTab === 'history' ? 'border-indigo-600 text-indigo-700 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>3. Endringslogg</button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 bg-white">
@@ -362,85 +370,120 @@ const CalendarView: React.FC<Props> = ({
                     })}
                   </div>
                 </div>
-              ) : (
+              ) : activeTab === 'staff' ? (
                 <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="flex justify-between items-center bg-indigo-600 px-4 py-3 rounded-xl shadow-md text-white">
+                  <div className="flex justify-between items-center bg-emerald-600 px-4 py-3 rounded-xl shadow-md text-white">
                     <div className="text-left flex items-center gap-3">
-                      <Sparkles size={18} className="text-indigo-200" />
-                      <p className="text-[11px] text-indigo-50 leading-tight">Opprett vakter automatisk basert på kjøreplanen.</p>
+                      <Sparkles size={18} className="text-emerald-200" />
+                      <div>
+                        <p className="text-[11px] text-emerald-50 leading-tight font-bold">Sanntidssynkronisert med kjøreplanen</p>
+                        <p className="text-[9px] text-emerald-100/70">Oppdateres automatisk ved endringer i programmet.</p>
+                      </div>
                     </div>
-                    {isAdmin && (
-                      <button 
-                        onClick={() => onSyncStaffing(selectedOcc.id)} 
-                        className="px-4 py-1.5 bg-white text-indigo-700 rounded-lg text-[10px] font-bold hover:bg-indigo-50 transition-all flex items-center gap-2"
-                      >
-                        <RefreshCw size={12} /> Synkroniser
-                      </button>
-                    )}
+                    <div className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded border border-white/20">
+                      Auto-aktiv
+                    </div>
                   </div>
 
                   <section>
                     <div className="flex justify-between items-center mb-3">
-                      <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Vaktliste</h4>
+                      <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Bemanningsoversikt</h4>
                       {isAdmin && (
                         <button onClick={() => setIsAddRoleModalOpen(true)} className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-600 hover:text-indigo-700">
-                          <Plus size={12} /> Legg til manuelt
+                          <Plus size={12} /> Legg til ekstra vakt
                         </button>
                       )}
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      {db.assignments.filter(a => a.occurrence_id === selectedOcc.id).map(assign => {
-                        const role = db.serviceRoles.find(r => r.id === assign.service_role_id);
-                        const person = db.persons.find(p => p.id === assign.person_id);
-                        const { recommended, others } = getCategorizedPersons(assign.service_role_id);
-                        return (
-                          <div key={assign.id} className={`p-3 bg-white border rounded-xl shadow-sm flex flex-col gap-2 transition-all ${person ? 'border-slate-100' : 'border-amber-100 bg-amber-50/20'}`}>
-                            <div className="flex justify-between items-start">
-                              <div className="flex items-center gap-2">
-                                <Library size={12} className="text-indigo-400" />
-                                <div className="flex items-center gap-1.5">
-                                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">{role?.name}</p>
-                                  {role && (
-                                    <button 
-                                      onClick={() => setRoleInstructionsId(role.id)} 
-                                      className="text-slate-300 hover:text-indigo-600 transition-colors"
-                                      title="Se instruks"
-                                    >
-                                      <div className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center">
-                                        <Info size={8} strokeWidth={3} />
-                                      </div>
-                                    </button>
-                                  )}
+                      {db.assignments
+                        .filter(a => a.occurrence_id === selectedOcc.id)
+                        .sort((a,b) => (a.display_order || 0) - (b.display_order || 0))
+                        .map(assign => {
+                          const role = db.serviceRoles.find(r => r.id === assign.service_role_id);
+                          const person = db.persons.find(p => p.id === assign.person_id);
+                          const { recommended, others } = getCategorizedPersons(assign.service_role_id);
+                          return (
+                            <div key={assign.id} className={`p-3 bg-white border rounded-xl shadow-sm flex flex-col gap-2 transition-all ${person ? 'border-slate-100' : 'border-amber-100 bg-amber-50/20'}`}>
+                              <div className="flex justify-between items-start">
+                                <div className="flex items-center gap-2">
+                                  <Library size={12} className="text-indigo-400" />
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">
+                                      {role?.name} {assign.display_order ? `(${assign.display_order})` : ''}
+                                    </p>
+                                    {role && (
+                                      <button 
+                                        onClick={() => setRoleInstructionsId(role.id)} 
+                                        className="text-slate-300 hover:text-indigo-600 transition-colors"
+                                        title="Se instruks"
+                                      >
+                                        <div className="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center">
+                                          <Info size={8} strokeWidth={3} />
+                                        </div>
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
+                                {!person && <AlertTriangle size={12} className="text-amber-500" />}
                               </div>
-                              {!person && <AlertTriangle size={12} className="text-amber-500" />}
-                            </div>
-                            <p className={`text-sm font-bold leading-tight ${person ? 'text-slate-800' : 'text-slate-300 italic'}`}>
-                              {person?.name || 'Ledig vakt'}
-                            </p>
-                            {isAdmin && (
-                              <select 
-                                className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-[10px] outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700 mt-1" 
-                                value={assign.person_id || ''} 
-                                onChange={(e) => onUpdateAssignment(assign.id, e.target.value || null)}
-                              >
-                                <option value="">Tildel person...</option>
-                                {recommended.length > 0 && (
-                                  <optgroup label="Anbefalt Team">
-                                    {recommended.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              <p className={`text-sm font-bold leading-tight ${person ? 'text-slate-800' : 'text-slate-300 italic'}`}>
+                                {person?.name || 'Ledig vakt'}
+                              </p>
+                              {isAdmin && (
+                                <select 
+                                  className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-[10px] outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-slate-700 mt-1" 
+                                  value={assign.person_id || ''} 
+                                  onChange={(e) => onUpdateAssignment(assign.id, e.target.value || null)}
+                                >
+                                  <option value="">Tildel person...</option>
+                                  {recommended.length > 0 && (
+                                    <optgroup label="Anbefalt Team">
+                                      {recommended.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    </optgroup>
+                                  )}
+                                  <optgroup label="Alle Personer">
+                                    {others.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                   </optgroup>
-                                )}
-                                <optgroup label="Alle Personer">
-                                  {others.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </optgroup>
-                              </select>
-                            )}
-                          </div>
-                        );
+                                </select>
+                              )}
+                            </div>
+                          );
                       })}
                     </div>
                   </section>
+                </div>
+              ) : (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="flex items-center justify-between border-b pb-3">
+                    <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                      <History size={14} /> Logg over bemanningsendringer
+                    </h4>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {logs.length > 0 ? logs.map(log => {
+                      const actor = db.persons.find(p => p.id === log.actor_id);
+                      return (
+                        <div key={log.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-start gap-4">
+                           <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0 border border-slate-200">
+                             <User size={14} className="text-slate-400" />
+                           </div>
+                           <div>
+                              <p className="text-sm text-slate-700 font-medium">{log.description}</p>
+                              <p className="text-[10px] text-slate-400 font-bold mt-1">
+                                {new Intl.DateTimeFormat('no-NO', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(log.timestamp))}
+                              </p>
+                           </div>
+                        </div>
+                      )
+                    }) : (
+                      <div className="text-center py-16 opacity-30">
+                        <History size={32} className="mx-auto mb-2 text-slate-300" />
+                        <p className="text-xs font-bold">Ingen endringer loggført ennå.</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -537,7 +580,6 @@ const CalendarView: React.FC<Props> = ({
                     <option value="">Ingen valgt</option>
                     {db.serviceRoles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
-                  <p className="text-[8px] text-slate-400 mt-1 italic">Administrer roller under "Teams & Grupper"</p>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Team (Gruppe)</label>

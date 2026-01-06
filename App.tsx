@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { AppState, Person, GroupCategory, EventOccurrence, ProgramItem, Assignment, UUID, GroupRole, Task } from './types';
+import React, { useState, useEffect, useCallback } from 'react';
+import { AppState, Person, GroupCategory, EventOccurrence, ProgramItem, Assignment, UUID, GroupRole, Task, NoticeMessage, CoreRole, ChangeLog } from './types';
 import { getDB, saveDB, performBulkCopy } from './db';
 import IdentityPicker from './components/IdentityPicker';
 import Dashboard from './components/Dashboard';
@@ -9,17 +9,102 @@ import CalendarView from './components/CalendarView';
 import MasterMenu from './components/MasterMenu';
 import GroupsView from './components/GroupsView';
 import YearlyWheelView from './components/YearlyWheelView';
-import { User, Calendar, Settings, Users, ClipboardList, Target } from 'lucide-react';
+import CommunicationView from './components/CommunicationView';
+import { User, Calendar, Settings, Users, ClipboardList, Target, Bell } from 'lucide-react';
 
 const App: React.FC = () => {
   const [db, setDb] = useState<AppState>(getDB());
   const [currentUser, setCurrentUser] = useState<Person | null>(null);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'calendar' | 'groups' | 'master' | 'wheel'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'calendar' | 'groups' | 'master' | 'wheel' | 'messages'>('dashboard');
   const [initialGroupId, setInitialGroupId] = useState<UUID | null>(null);
 
   useEffect(() => {
     saveDB(db);
   }, [db]);
+
+  // AUTOMATISK SYNKRONISERING OG VARSLINGSLOGIKK
+  const syncStaffingAndNotify = useCallback((occurrenceId: UUID, state: AppState, actor: Person): AppState => {
+    const occ = state.eventOccurrences.find(o => o.id === occurrenceId);
+    if (!occ) return state;
+
+    const programItems = state.programItems.filter(p => p.occurrence_id === occurrenceId);
+    const existingAssignments = state.assignments.filter(a => a.occurrence_id === occurrenceId);
+    
+    // 1. Aggreger unike [Rolle + Person] fra programmet
+    const rolePersonMap = new Map<string, string[]>();
+    programItems.forEach(item => {
+      if (item.service_role_id) {
+        if (!rolePersonMap.has(item.service_role_id)) {
+          rolePersonMap.set(item.service_role_id, []);
+        }
+        const assignedPersons = rolePersonMap.get(item.service_role_id)!;
+        if (item.person_id && !assignedPersons.includes(item.person_id)) {
+          assignedPersons.push(item.person_id);
+        }
+      }
+    });
+
+    const newAssignments: Assignment[] = [];
+    const logs: ChangeLog[] = [];
+    const notices: NoticeMessage[] = [];
+
+    rolePersonMap.forEach((personIds, roleId) => {
+      personIds.forEach((pId, index) => {
+        newAssignments.push({
+          id: crypto.randomUUID(),
+          occurrence_id: occurrenceId,
+          service_role_id: roleId,
+          person_id: pId,
+          display_order: index + 1
+        });
+      });
+    });
+
+    // 2. Finn endringer for Logg og Varsling
+    const roleNames = new Map(state.serviceRoles.map(r => [r.id, r.name]));
+    const personNames = new Map(state.persons.map(p => [p.id, p.name]));
+    
+    // Enkel differanse-sjekk
+    newAssignments.forEach(na => {
+      const match = existingAssignments.find(ea => ea.service_role_id === na.service_role_id && ea.person_id === na.person_id);
+      if (!match) {
+        const roleName = roleNames.get(na.service_role_id) || 'Ukjent rolle';
+        const personName = personNames.get(na.person_id!) || 'Ingen';
+        const desc = `${roleName} ble satt til ${personName} av ${actor.name}`;
+        
+        logs.push({
+          id: crypto.randomUUID(),
+          occurrence_id: occurrenceId,
+          actor_id: actor.id,
+          timestamp: new Date().toISOString(),
+          description: desc
+        });
+
+        // Finn Møteleder for varsling
+        const motelederRole = state.serviceRoles.find(r => r.name.toLowerCase().includes('møteleder'));
+        const motelederAssignment = existingAssignments.find(a => a.service_role_id === motelederRole?.id);
+
+        // Systemmelding
+        notices.push({
+          id: crypto.randomUUID(),
+          sender_id: 'system',
+          recipient_role: CoreRole.PASTOR,
+          title: 'Bemanning oppdatert',
+          content: `Endring for ${occ.title_override || 'Gudstjeneste'} (${occ.date}): ${desc}`,
+          created_at: new Date().toISOString(),
+          occurrence_id: occurrenceId
+        });
+      }
+    });
+
+    return {
+      ...state,
+      assignments: [...state.assignments.filter(a => a.occurrence_id !== occurrenceId), ...newAssignments],
+      changeLogs: [...(state.changeLogs || []), ...logs],
+      noticeMessages: [...notices, ...state.noticeMessages],
+      eventOccurrences: state.eventOccurrences.map(o => o.id === occurrenceId ? { ...o, last_synced_at: new Date().toISOString() } : o)
+    };
+  }, []);
 
   const findRecommendedPerson = (serviceRoleId: string, state: AppState): string | null => {
     const teamLinks = state.groupServiceRoles.filter(gsr => gsr.service_role_id === serviceRoleId);
@@ -53,82 +138,65 @@ const App: React.FC = () => {
   };
 
   const handleUpdateAssignment = (id: string, personId: string | null) => {
-    setDb(prev => ({
-      ...prev,
-      assignments: prev.assignments.map(a => a.id === id ? { ...a, person_id: personId } : a)
-    }));
+    setDb(prev => {
+      const target = prev.assignments.find(a => a.id === id);
+      if (!target || !target.occurrence_id) return prev;
+      
+      const nextState = {
+        ...prev,
+        assignments: prev.assignments.map(a => a.id === id ? { ...a, person_id: personId } : a)
+      };
+      
+      // Siden vakter nå styres av programpostene, må vi her også oppdatere relevante programposter hvis de finnes
+      const updatedProgramItems = nextState.programItems.map(p => 
+        (p.occurrence_id === target.occurrence_id && p.service_role_id === target.service_role_id) 
+        ? { ...p, person_id: personId } 
+        : p
+      );
+
+      return syncStaffingAndNotify(target.occurrence_id, { ...nextState, programItems: updatedProgramItems }, currentUser!);
+    });
   };
 
   const handleAddAssignment = (occurrenceId: string, roleId: string) => {
-    const defaultPersonId = findRecommendedPerson(roleId, db);
-    const newAssignment: Assignment = {
-      id: crypto.randomUUID(),
-      occurrence_id: occurrenceId,
-      template_id: null,
-      service_role_id: roleId,
-      person_id: defaultPersonId
-    };
-    setDb(prev => ({
-      ...prev,
-      assignments: [...prev.assignments, newAssignment]
-    }));
-  };
-
-  const handleSyncStaffing = (occurrenceId: string) => {
     setDb(prev => {
-      const items = prev.programItems.filter(p => p.occurrence_id === occurrenceId);
-      let updatedAssignments = [...prev.assignments];
-      
-      const rolePersonMap = new Map<string, string | null>();
-      items.forEach(item => {
-        if (item.service_role_id) {
-          if (!rolePersonMap.has(item.service_role_id) || item.person_id) {
-            rolePersonMap.set(item.service_role_id, item.person_id);
-          }
-        }
-      });
-
-      rolePersonMap.forEach((personId, roleId) => {
-        const existingIdx = updatedAssignments.findIndex(a => a.occurrence_id === occurrenceId && a.service_role_id === roleId);
-        const targetPerson = personId || findRecommendedPerson(roleId, prev);
-
-        if (existingIdx > -1) {
-          updatedAssignments[existingIdx] = { ...updatedAssignments[existingIdx], person_id: targetPerson };
-        } else {
-          updatedAssignments.push({
-            id: crypto.randomUUID(),
-            occurrence_id: occurrenceId,
-            template_id: null,
-            service_role_id: roleId,
-            person_id: targetPerson
-          });
-        }
-      });
-      
-      return { ...prev, assignments: updatedAssignments };
+      const defaultPersonId = findRecommendedPerson(roleId, prev);
+      const newState = {
+        ...prev,
+        assignments: [...prev.assignments, {
+          id: crypto.randomUUID(),
+          occurrence_id: occurrenceId,
+          template_id: null,
+          service_role_id: roleId,
+          person_id: defaultPersonId
+        }]
+      };
+      return syncStaffingAndNotify(occurrenceId, newState, currentUser!);
     });
   };
 
   const handleAddProgramItem = (item: ProgramItem) => {
-    setDb(prev => ({
-      ...prev,
-      programItems: [...prev.programItems, item]
-    }));
+    setDb(prev => {
+      const newState = { ...prev, programItems: [...prev.programItems, item] };
+      return item.occurrence_id ? syncStaffingAndNotify(item.occurrence_id, newState, currentUser!) : newState;
+    });
   };
 
   const handleUpdateProgramItem = (id: string, updates: Partial<ProgramItem>) => {
-    setDb(prev => ({
-      ...prev,
-      programItems: prev.programItems.map(p => p.id === id ? { ...p, ...updates } : p)
-    }));
+    setDb(prev => {
+      const target = prev.programItems.find(p => p.id === id);
+      const newState = {
+        ...prev,
+        programItems: prev.programItems.map(p => p.id === id ? { ...p, ...updates } : p)
+      };
+      return (target?.occurrence_id) ? syncStaffingAndNotify(target.occurrence_id, newState, currentUser!) : newState;
+    });
   };
 
   const handleReorderProgramItems = (occurrenceId: string, reorderedItems: ProgramItem[]) => {
     setDb(prev => {
-      // Create a map of the new order
       const newOrderMap = new Map(reorderedItems.map((item, index) => [item.id, index]));
-      
-      return {
+      const newState = {
         ...prev,
         programItems: prev.programItems.map(p => {
           if (p.occurrence_id === occurrenceId && newOrderMap.has(p.id)) {
@@ -137,14 +205,19 @@ const App: React.FC = () => {
           return p;
         })
       };
+      return syncStaffingAndNotify(occurrenceId, newState, currentUser!);
     });
   };
 
   const handleDeleteProgramItem = (id: string) => {
-    setDb(prev => ({
-      ...prev,
-      programItems: prev.programItems.filter(p => p.id !== id)
-    }));
+    setDb(prev => {
+      const target = prev.programItems.find(p => p.id === id);
+      const newState = {
+        ...prev,
+        programItems: prev.programItems.filter(p => p.id !== id)
+      };
+      return (target?.occurrence_id) ? syncStaffingAndNotify(target.occurrence_id, newState, currentUser!) : newState;
+    });
   };
 
   const handleCreateOccurrence = (templateId: string, date: string) => {
@@ -222,6 +295,20 @@ const App: React.FC = () => {
     setInitialGroupId(groupId);
   };
 
+  const handleAddMessage = (msg: NoticeMessage) => {
+    setDb(prev => ({
+      ...prev,
+      noticeMessages: [msg, ...prev.noticeMessages]
+    }));
+  };
+
+  const handleDeleteMessage = (id: UUID) => {
+    setDb(prev => ({
+      ...prev,
+      noticeMessages: prev.noticeMessages.filter(m => m.id !== id)
+    }));
+  };
+
   useEffect(() => {
     if (activeTab !== 'groups') {
       setInitialGroupId(null);
@@ -232,8 +319,10 @@ const App: React.FC = () => {
     return <IdentityPicker persons={db.persons} onSelect={handleIdentitySelect} />;
   }
 
+  const canSeeMessages = currentUser.core_role === CoreRole.ADMIN || currentUser.core_role === CoreRole.PASTOR || currentUser.core_role === CoreRole.TEAM_LEADER;
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-left">
       <nav className="hidden md:flex flex-col w-64 bg-white border-r h-screen sticky top-0">
         <div className="p-6">
           <h1 className="text-xl font-bold text-indigo-700 leading-tight uppercase tracking-tighter">EventMaster<br/><span className="text-indigo-400">LMK</span></h1>
@@ -243,9 +332,12 @@ const App: React.FC = () => {
           <NavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<ClipboardList size={18}/>} label="Min Vaktliste" />
           <NavItem active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} icon={<Calendar size={18}/>} label="Kalender" />
           <NavItem active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} icon={<Users size={18}/>} label="Teams & Grupper" />
+          {canSeeMessages && (
+            <NavItem active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} icon={<Bell size={18}/>} label="Oppslag & Dialog" />
+          )}
           <NavItem active={activeTab === 'wheel'} onClick={() => setActiveTab('wheel')} icon={<Target size={18}/>} label="Årshjul" />
           {currentUser.is_admin && (
-            <NavItem active={activeTab === 'master'} onClick={() => setActiveTab('master')} icon={<Settings size={18}/>} label="Master-oppsett" />
+            <NavItem active={activeTab === 'master'} onClick={() => setActiveTab('master'} icon={<Settings size={18}/>} label="Master-oppsett" />
           )}
         </div>
 
@@ -273,7 +365,7 @@ const App: React.FC = () => {
             isAdmin={currentUser.is_admin} 
             onUpdateAssignment={handleUpdateAssignment}
             onAddAssignment={handleAddAssignment}
-            onSyncStaffing={handleSyncStaffing}
+            onSyncStaffing={() => {}} // Nå automatisk
             onCreateOccurrence={handleCreateOccurrence}
             onCreateRecurring={handleCreateRecurringOccurrences}
             onAddProgramItem={handleAddProgramItem}
@@ -284,12 +376,16 @@ const App: React.FC = () => {
         )}
         {activeTab === 'groups' && <GroupsView db={db} setDb={setDb} isAdmin={currentUser.is_admin} initialViewGroupId={initialGroupId} />}
         {activeTab === 'wheel' && <YearlyWheelView db={db} isAdmin={currentUser.is_admin} onAddTask={handleAddTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} />}
+        {activeTab === 'messages' && canSeeMessages && (
+          <CommunicationView db={db} currentUser={currentUser} onAddMessage={handleAddMessage} onDeleteMessage={handleDeleteMessage} />
+        )}
         {activeTab === 'master' && currentUser.is_admin && (
           <MasterMenu 
             db={db} 
             setDb={setDb} 
             onCreateRecurring={handleCreateRecurringOccurrences} 
             onAddProgramItem={handleAddProgramItem}
+            onUpdateProgramItem={handleUpdateProgramItem}
             onDeleteProgramItem={handleDeleteProgramItem}
           />
         )}
@@ -299,9 +395,12 @@ const App: React.FC = () => {
         <MobileNavItem active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} icon={<ClipboardList size={18}/>} label="Vakter" />
         <MobileNavItem active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} icon={<Calendar size={18}/>} label="Kalender" />
         <MobileNavItem active={activeTab === 'groups'} onClick={() => setActiveTab('groups')} icon={<Users size={18}/>} label="Grupper" />
+        {canSeeMessages && (
+          <MobileNavItem active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} icon={<Bell size={18}/>} label="Melding" />
+        )}
         <MobileNavItem active={activeTab === 'wheel'} onClick={() => setActiveTab('wheel')} icon={<Target size={18}/>} label="Årshjul" />
         {currentUser.is_admin && (
-          <MobileNavItem active={activeTab === 'master'} onClick={() => setActiveTab('master'} icon={<Settings size={18}/>} label="Master" />
+          <MobileNavItem active={activeTab === 'master'} onClick={() => setActiveTab('master')} icon={<Settings size={18}/>} label="Master" />
         )}
       </div>
     </div>

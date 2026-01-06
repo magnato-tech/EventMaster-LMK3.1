@@ -1,3 +1,4 @@
+
 import { AppState, UUID, Assignment, Task, EventOccurrence, ProgramItem, OccurrenceStatus } from './types';
 import { INITIAL_DATA } from './constants';
 
@@ -21,22 +22,10 @@ export const performBulkCopy = (occurrence: EventOccurrence, state: AppState): A
   const existingAssignments = state.assignments.filter(a => a.occurrence_id === occurrence.id);
   if (existingAssignments.length > 0) return state;
 
-  // Get all assignments linked to the template
-  const templateAssignments = state.assignments.filter(a => a.template_id === occurrence.template_id);
-  
-  // Create local copies of assignments for this occurrence
-  // Fix: Use service_role_id instead of non-existent role_id
-  const newAssignments: Assignment[] = templateAssignments.map(ta => ({
-    id: crypto.randomUUID(),
-    occurrence_id: occurrence.id,
-    template_id: null,
-    service_role_id: ta.service_role_id,
-    person_id: ta.person_id // Inherit person if one is set in master (default staff)
-  }));
-
-  // Create local copies of program items for this occurrence
+  // 1. Get all program items for the template
   const templateProgramItems = state.programItems.filter(p => p.template_id === occurrence.template_id);
-  // Fix: Use service_role_id instead of non-existent role_id
+  
+  // Create local copies of program items for this occurrence
   const newProgramItems: ProgramItem[] = templateProgramItems.map(tp => ({
     id: crypto.randomUUID(),
     occurrence_id: occurrence.id,
@@ -45,11 +34,43 @@ export const performBulkCopy = (occurrence: EventOccurrence, state: AppState): A
     duration_minutes: tp.duration_minutes,
     service_role_id: tp.service_role_id,
     group_id: tp.group_id,
-    person_id: tp.person_id, // Inherit person if set in master
+    person_id: tp.person_id,
     order: tp.order
   }));
 
-  // Create local copies of tasks for this occurrence
+  // 2. Calculate program-based assignments (Source A)
+  // We need to create a unique assignment for each [role + person] combo in the program
+  const autoAssignments: Assignment[] = [];
+  const roleCounts = new Map<string, number>();
+
+  templateProgramItems.forEach(tp => {
+    if (tp.service_role_id) {
+      const count = (roleCounts.get(tp.service_role_id) || 0) + 1;
+      roleCounts.set(tp.service_role_id, count);
+      
+      autoAssignments.push({
+        id: crypto.randomUUID(),
+        occurrence_id: occurrence.id,
+        template_id: null,
+        service_role_id: tp.service_role_id,
+        person_id: tp.person_id,
+        display_order: count
+      });
+    }
+  });
+
+  // 3. Get manual assignments (Source B)
+  const templateManualAssignments = state.assignments.filter(a => a.template_id === occurrence.template_id);
+  const newManualAssignments: Assignment[] = templateManualAssignments.map(ta => ({
+    id: crypto.randomUUID(),
+    occurrence_id: occurrence.id,
+    template_id: null,
+    service_role_id: ta.service_role_id,
+    person_id: ta.person_id,
+    display_order: 0 // Manual assignments usually don't need index-based numbering initially
+  }));
+
+  // 4. Create local copies of tasks for this occurrence
   const templateTasks = state.tasks.filter(t => t.template_id === occurrence.template_id);
   const newTasks: Task[] = templateTasks.map(tt => ({
     id: crypto.randomUUID(),
@@ -63,7 +84,7 @@ export const performBulkCopy = (occurrence: EventOccurrence, state: AppState): A
 
   return {
     ...state,
-    assignments: [...state.assignments, ...newAssignments],
+    assignments: [...state.assignments, ...autoAssignments, ...newManualAssignments],
     programItems: [...state.programItems, ...newProgramItems],
     tasks: [...state.tasks, ...newTasks]
   };

@@ -58,10 +58,9 @@ export interface GroupMember {
   group_id: UUID;
   person_id: UUID;
   role: GroupRole;
-  service_role_id?: UUID | null; // Nytt felt: Spesifikk funksjon fra katalogen
+  service_role_id?: UUID | null;
 }
 
-/** Global Role Catalog */
 export interface ServiceRole {
   id: UUID;
   name: string;
@@ -70,7 +69,6 @@ export interface ServiceRole {
   is_active: boolean;
 }
 
-/** Link between a Group and a ServiceRole (Defines which roles are valid for this group) */
 export interface GroupServiceRole {
   id: UUID;
   group_id: UUID;
@@ -92,14 +90,16 @@ export interface EventOccurrence {
   date: string;
   title_override?: string;
   status: OccurrenceStatus;
+  last_synced_at?: string;
 }
 
 export interface Assignment {
   id: UUID;
   occurrence_id?: UUID | null;
   template_id?: UUID | null;
-  service_role_id: UUID; // Point to global role
+  service_role_id: UUID;
   person_id?: UUID | null;
+  display_order?: number; // For (1), (2) etc
 }
 
 export interface ProgramItem {
@@ -108,7 +108,7 @@ export interface ProgramItem {
   occurrence_id?: UUID | null;
   title: string;
   duration_minutes: number;
-  service_role_id?: UUID | null; // Point to global role
+  service_role_id?: UUID | null;
   group_id?: UUID | null;
   person_id?: UUID | null;
   order: number;
@@ -124,6 +124,24 @@ export interface Task {
   is_global: boolean;
 }
 
+export interface ChangeLog {
+  id: UUID;
+  occurrence_id: UUID;
+  actor_id: UUID;
+  timestamp: string;
+  description: string;
+}
+
+export interface NoticeMessage {
+  id: UUID;
+  sender_id: UUID | 'system';
+  recipient_role: CoreRole; 
+  title: string;
+  content: string;
+  created_at: string;
+  occurrence_id?: UUID;
+}
+
 export interface AppState {
   persons: Person[];
   groups: Group[];
@@ -135,4 +153,6 @@ export interface AppState {
   assignments: Assignment[];
   programItems: ProgramItem[];
   tasks: Task[];
+  noticeMessages: NoticeMessage[];
+  changeLogs: ChangeLog[]; // Ny
 }
